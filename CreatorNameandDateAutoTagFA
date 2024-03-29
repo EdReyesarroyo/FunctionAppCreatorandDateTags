@@ -1,0 +1,43 @@
+#Origin Source: Ciraltos (Modified for AzGov Use)
+#Function App, Identity, Modules, and Additional Dependedncies Required
+#####Read Me#####
+#This script is designed for use with Azure Functions after proper function and idenity configuration to 
+#handle events from Azure Event Grid and to tag Azure resource groups automatically based on event data. 
+#Script validated on MME 3/11/24 and only scoped to ID RGs and for the UCO and PT subscriptions acknowledging that it would only 
+#solve (est.) 80% of #the resource ownership problem within the environemnt as whole as some resources are provissionined 
+#programatically via #managed IDs/IaC. The function APP is located at the Creator_Name_and_Date_AutoTag_RG resource group 
+####Read Me#####
+
+# Parameter Name must match bindings and must be declared first#
+#The param declaration declare the parameters that the Azure Function expects to receive. In this case, $eventGridEvent holds the data #for the Event Grid event, and $TriggerMetadata contains metadata about the trigger that invoked the function.
+param($eventGridEvent, $TriggerMetadata)
+
+#Azure Account Connection: The Connect-AzAccount cmdlet with the -Identity flag indicates that the Azure Function uses 
+#Managed Identity to authenticate to Azure. The -Environment flag specifies that it's connecting to the Azure US Government cloud 
+Connect-AzAccount -Identity -Environment 'AzureUSGovernment'
+
+# Get the day in Month Day Year format. Format can be modified to meet requirements
+$date = Get-Date -Format "MM/dd/yyyy"
+
+# Add tag and value to the resource group by preparing a hashtable $tags with two entries, Creator and DateCreated, using values from #the event data and the current date.
+$nameValue = $eventGridEvent.data.claims.name
+$tags = @{"Creator"="$nameValue";"DateCreated"="$date"}
+write-output "Tags:"
+write-output $tags
+
+# Collect RG Information for proper tag placement:
+$rgURI = $eventGridEvent.data.resourceUri
+write-output "rgURI:"
+write-output $rgURI
+
+# Update the tag value with the Update-AzTag to append a tag with out removing other tags
+
+Try {
+    Update-AzTag -ResourceId $rgURI -Tag $tags -operation Merge -ErrorAction Stop
+}
+Catch {
+    $ErrorMessage = $_.Exception.message
+    write-host ('Error assigning tags ' + $ErrorMessage)
+    Break
+}
+
